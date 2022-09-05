@@ -1482,6 +1482,28 @@ async function runFan() {
         }));
     }
     
+    // Check if night mode is activated
+    if(config.fan.night_flow_enable===true) {
+        const now = new Date();
+        night_start = new Date(config.fan.night_flow_start + now.getTimezoneOffset() * 60000);
+        night_stop = new Date(config.fan.night_flow_stop + now.getTimezoneOffset() * 60000);
+        night_start_minutes = night_start.getMinutes() + night_start.getHours() * 60;
+        night_stop_minutes = night_stop.getMinutes() + night_stop.getHours() * 60;
+        now_minutes = now.getMinutes() + now.getHours() * 60;
+        if(night_start_minutes < night_stop_minutes && night_start_minutes<=now_minutes && now_minutes<=night_stop_minutes) {
+            night_mode = true;
+            nibe.log(`Nattläge är aktiverat.`,'fan','debug');
+        } else if(night_start_minutes >= night_stop_minutes && (night_start_minutes<=now_minutes || now_minutes<=night_stop_minutes)) {
+            night_mode = true;
+            nibe.log(`Nattläge är aktiverat.`,'fan','debug');
+        } else {
+            night_mode = false;
+            nibe.log(`Villkor för nattläge är ej uppfyllt.`,'fan','debug');
+        }
+    } else {
+        night_mode = false;
+        nibe.log(`Nattläge är inaktiverat`,'fan','debug');
+    }
     
     // Start regulating only if not defrosting and vented air is above freezing temperatures.
     if(dMboost===true || co2boost===true || (data.alarm.raw_data!==183 && data.evaporator.raw_data>0 && data.temp_fan_speed!==undefined && data.temp_fan_speed.raw_data===0)) {
@@ -1495,7 +1517,17 @@ async function runFan() {
         }
         nibe.log(`Villkor uppfyllda för reglering av flöde.`,'fan','debug');
         nibe.log(`Flowset: ${flow_set}, Flöde: ${data.bs1_flow.raw_data}, Flowsaved: ${flow_saved}`,'fan','debug');
-        if(data.bs1_flow.raw_data>(flow_set+25) && (flow_saved===undefined || data.bs1_flow.raw_data>flow_saved+25)) {
+        if(night_mode){ // Limit airflow during night time
+            if(data.bs1_flow.raw_data<config.fan.night_flow-10){
+                nibe.log(`Det är natt, men luftflödet är för lågt. Flöde: ${data.bs1_flow.raw_data} m3/h +1%`,'fan','debug');
+                nibe.setData(hP.fan_speed,(data.fan_speed.raw_data+1));
+            } else if(data.bs1_flow.raw_data<config.fan.night_flow){
+                nibe.log(`Det är natt. Flöde: ${data.bs1_flow.raw_data} m3/h`,'fan','debug');
+            } else {
+                nibe.log(`Det är natt och luftflödet är för högt. Flöde: ${data.bs1_flow.raw_data} m3/h, -1%`,'fan','debug');
+                if(data.fan_speed.raw_data>0) nibe.setData(hP.fan_speed,(data.fan_speed.raw_data-1));
+            }
+        } else if(data.bs1_flow.raw_data>(flow_set+25) && (flow_saved===undefined || data.bs1_flow.raw_data>flow_saved+25)) {
             nibe.log(`Luftflöde långt över börvärde: ${flow_set}, Flöde: ${data.bs1_flow.raw_data} m3/h, Forcering pågår`,'fan','debug');
         } else if(data.bs1_flow.raw_data>(flow_set+10)) {
             nibe.log(`Luftflöde över gränsvärde: ${flow_set+10}, Flöde: ${data.bs1_flow.raw_data} m3/h, -1%`,'fan','debug');
